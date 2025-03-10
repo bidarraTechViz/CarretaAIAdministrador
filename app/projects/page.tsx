@@ -6,9 +6,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { getActiveProjects, getCompletedProjects, getClients } from "@/lib/db-service"
+import { getActiveProjects, getCompletedProjects, getClients, updateProjectsSchema } from "@/lib/db-service"
 import { supabase, type Project, type Client } from "@/lib/supabase"
 import { Loader2 } from "lucide-react"
+import { toast } from "@/components/ui/use-toast"
 
 const Page = () => {
   const [activeProjects, setActiveProjects] = useState<Project[]>([])
@@ -38,10 +39,38 @@ const Page = () => {
       if (!confirm("Tem certeza que deseja marcar este projeto como concluído?")) {
         return
       }
-      await supabase.from("projects").update({ status: "completed" }).eq("id", id).single()
+      await supabase.from("projects").update({ 
+        status: "completed",
+        end_time: new Date().toISOString()
+      }).eq("id", id).single()
       await loadData()
     } catch (error) {
       setError(error instanceof Error ? error.message : "Erro ao concluir projeto")
+    }
+  }
+
+  const revertProjectCompletion = async (id: number) => {
+    try {
+      setError(null)
+      if (!confirm("Tem certeza que deseja reverter a conclusão deste projeto?")) {
+        return
+      }
+      await supabase.from("projects").update({ 
+        status: "active",
+        end_time: null // Limpar o campo de conclusão
+      }).eq("id", id).single()
+      await loadData()
+      toast({
+        title: "Sucesso",
+        description: "A conclusão do projeto foi revertida com sucesso.",
+      })
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Erro ao reverter conclusão do projeto")
+      toast({
+        title: "Erro",
+        description: "Não foi possível reverter a conclusão do projeto.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -92,15 +121,51 @@ const Page = () => {
   }
 
   useEffect(() => {
-    loadData()
+    // Atualizar o esquema do banco de dados e carregar os dados
+    const initPage = async () => {
+      try {
+        // Tentar atualizar o esquema do banco de dados
+        const schemaResult = await updateProjectsSchema();
+        if (schemaResult.success) {
+          console.log("Esquema atualizado:", schemaResult.message);
+        } else {
+          console.error("Erro ao atualizar esquema:", schemaResult.error);
+        }
+      } catch (error) {
+        console.error("Erro ao inicializar página:", error);
+      } finally {
+        // Carregar os dados independentemente do resultado da atualização do esquema
+        loadData();
+      }
+    };
+
+    initPage();
   }, [])
 
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "Não definido";
+    const date = new Date(dateStr);
+    return date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   const renderProjectDetails = (project: Project) => (
-    <div>
-      <p>Cliente: {project.client}</p>
-      <p>Endereço: {project.address}</p>
-      <p>Volume Estimado: {project.estimated_volume} m³</p>
-      <p>Volume Transportado: {project.transported_volume} m³</p>
+    <div className="space-y-2">
+      <p><strong>Cliente:</strong> {project.client}</p>
+      <p><strong>Endereço:</strong> {project.address}</p>
+      <p><strong>Volume Estimado:</strong> {project.estimated_volume} m³</p>
+      <p><strong>Volume Transportado:</strong> {project.transported_volume} m³</p>
+      <p><strong>Status:</strong> {project.status === "active" ? "Ativo" : "Concluído"}</p>
+      <p><strong>Data de Início:</strong> {formatDate(project.start_time)}</p>
+      <p><strong>Prazo Estimado:</strong> {formatDate(project.estimated_end_time)}</p>
+      {project.status === "completed" && (
+        <p><strong>Data de Conclusão:</strong> {formatDate(project.end_time)}</p>
+      )}
     </div>
   )
 
@@ -141,13 +206,27 @@ const Page = () => {
                   Editar
                 </Button>
 
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => markProjectAsCompleted(project.id)}
-                >
-                  Concluir
-                </Button>
+                {/* Mostrar botão "Concluir" apenas para projetos ativos */}
+                {project.status === "active" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => markProjectAsCompleted(project.id)}
+                  >
+                    Concluir
+                  </Button>
+                )}
+
+                {/* Mostrar botão "Reverter Conclusão" apenas para projetos concluídos */}
+                {project.status === "completed" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => revertProjectCompletion(project.id)}
+                  >
+                    Reverter Conclusão
+                  </Button>
+                )}
 
                 <Button
                   size="sm"
@@ -166,7 +245,115 @@ const Page = () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Projetos</h1>
+      <div className="flex justify-between items-center">
+        <h1 className="text-xl font-bold">Projetos</h1>
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-black text-[#F2BE13] hover:bg-black/80">Adicionar Projeto</Button>
+          </DialogTrigger>
+          <DialogContent className="bg-black text-[#F2BE13]">
+            <DialogHeader>
+              <DialogTitle>Adicionar Novo Projeto</DialogTitle>
+            </DialogHeader>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const formData = new FormData(e.currentTarget)
+                
+                // Obter e formatar as datas
+                const startTimeValue = formData.get("startTime") as string;
+                const estimatedEndTimeValue = formData.get("estimatedEndTime") as string;
+                
+                // Criar objeto do projeto com os novos campos
+                addProject({
+                  name: formData.get("projectName") as string,
+                  client: formData.get("clientName") as string,
+                  address: formData.get("address") as string,
+                  estimated_volume: Number(formData.get("estimatedVolume")),
+                  transported_volume: 0, // Inicialmente zero
+                  status: "active", // Novo projeto sempre começa como ativo
+                  start_time: startTimeValue ? new Date(startTimeValue).toISOString() : new Date().toISOString(), // Data atual se não for fornecida
+                  estimated_end_time: estimatedEndTimeValue ? new Date(estimatedEndTimeValue).toISOString() : undefined,
+                })
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <Label htmlFor="projectName">Nome do Projeto</Label>
+                <Input 
+                  id="projectName" 
+                  name="projectName" 
+                  required 
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="clientName">Cliente</Label>
+                <Select name="clientName" required>
+                  <SelectTrigger className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]">
+                    <SelectValue placeholder="Selecione um cliente" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-black text-[#F2BE13]">
+                    {clients.map((client) => (
+                      <SelectItem key={client.id} value={client.name}>
+                        {client.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="address">Endereço</Label>
+                <Input 
+                  id="address" 
+                  name="address" 
+                  required 
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="estimatedVolume">Volume Estimado (m³)</Label>
+                <Input 
+                  id="estimatedVolume" 
+                  name="estimatedVolume" 
+                  type="number" 
+                  step="0.01"
+                  required 
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="startTime">Data de Início</Label>
+                <Input 
+                  id="startTime" 
+                  name="startTime" 
+                  type="datetime-local" 
+                  defaultValue={new Date().toISOString().slice(0, 16)}
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="estimatedEndTime">Prazo Estimado</Label>
+                <Input 
+                  id="estimatedEndTime" 
+                  name="estimatedEndTime" 
+                  type="datetime-local"
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+
+              <Button type="submit" className="bg-[#F2BE13] text-black hover:bg-[#F2BE13]/80">
+                Criar Projeto
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
       {isLoading ? (
         <div className="flex justify-center items-center h-screen">
           <Loader2 className="animate-spin h-12 w-12 text-gray-500" />
@@ -188,59 +375,99 @@ const Page = () => {
           </DialogHeader>
           {selectedProject && (
             <form
-  onSubmit={(e) => {
-    e.preventDefault()
-    const formData = new FormData(e.currentTarget)
-    updateProject({
-      id: selectedProject.id,
-      name: formData.get("projectName") as string,
-      client: formData.get("clientName") as string,
-      address: formData.get("address") as string,
-      estimated_volume: Number(formData.get("estimatedVolume")),
-      transported_volume: Number(formData.get("transportedVolume")),
-    })
-  }}
-  className="space-y-4"
->
-  <div>
-    <Label htmlFor="projectName">Nome do Projeto</Label>
-    <Input id="projectName" name="projectName" defaultValue={selectedProject.name} required />
-  </div>
+              onSubmit={(e) => {
+                e.preventDefault()
+                const formData = new FormData(e.currentTarget)
+                
+                // Obter e formatar as datas
+                const startTimeValue = formData.get("startTime") as string;
+                const estimatedEndTimeValue = formData.get("estimatedEndTime") as string;
+                const endTimeValue = formData.get("endTime") as string;
+                
+                updateProject({
+                  id: selectedProject.id,
+                  name: formData.get("projectName") as string,
+                  client: formData.get("clientName") as string,
+                  address: formData.get("address") as string,
+                  estimated_volume: Number(formData.get("estimatedVolume")),
+                  transported_volume: Number(formData.get("transportedVolume")),
+                  start_time: startTimeValue ? new Date(startTimeValue).toISOString() : selectedProject.start_time,
+                  estimated_end_time: estimatedEndTimeValue ? new Date(estimatedEndTimeValue).toISOString() : selectedProject.estimated_end_time,
+                  end_time: endTimeValue ? new Date(endTimeValue).toISOString() : selectedProject.end_time,
+                })
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <Label htmlFor="projectName">Nome do Projeto</Label>
+                <Input id="projectName" name="projectName" defaultValue={selectedProject.name} required />
+              </div>
 
-  <div>
-    <Label htmlFor="clientName">Cliente</Label>
-    <Select name="clientName" defaultValue={selectedProject.client}>
-      <SelectTrigger>
-        <SelectValue placeholder="Selecione um cliente" />
-      </SelectTrigger>
-      <SelectContent>
-        {clients.map((client) => (
-          <SelectItem key={client.id} value={client.name}>
-            {client.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  </div>
+              <div>
+                <Label htmlFor="clientName">Cliente</Label>
+                <Select name="clientName" defaultValue={selectedProject.client}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um cliente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.map((client) => (
+                      <SelectItem key={client.id} value={client.name}>
+                        {client.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-  <div>
-    <Label htmlFor="address">Endereço</Label>
-    <Input id="address" name="address" defaultValue={selectedProject.address} required />
-  </div>
+              <div>
+                <Label htmlFor="address">Endereço</Label>
+                <Input id="address" name="address" defaultValue={selectedProject.address} required />
+              </div>
 
-  <div>
-    <Label htmlFor="estimatedVolume">Volume Estimado (m³)</Label>
-    <Input id="estimatedVolume" name="estimatedVolume" type="number" defaultValue={selectedProject.estimated_volume} required />
-  </div>
+              <div>
+                <Label htmlFor="estimatedVolume">Volume Estimado (m³)</Label>
+                <Input id="estimatedVolume" name="estimatedVolume" type="number" defaultValue={selectedProject.estimated_volume} required />
+              </div>
 
-  <div>
-    <Label htmlFor="transportedVolume">Volume Transportado (m³)</Label>
-    <Input id="transportedVolume" name="transportedVolume" type="number" defaultValue={selectedProject.transported_volume} required />
-  </div>
+              <div>
+                <Label htmlFor="transportedVolume">Volume Transportado (m³)</Label>
+                <Input id="transportedVolume" name="transportedVolume" type="number" defaultValue={selectedProject.transported_volume} required />
+              </div>
+              
+              <div>
+                <Label htmlFor="startTime">Data de Início</Label>
+                <Input 
+                  id="startTime" 
+                  name="startTime" 
+                  type="datetime-local" 
+                  defaultValue={selectedProject.start_time ? new Date(selectedProject.start_time).toISOString().slice(0, 16) : ''}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="estimatedEndTime">Prazo Estimado</Label>
+                <Input 
+                  id="estimatedEndTime" 
+                  name="estimatedEndTime" 
+                  type="datetime-local"
+                  defaultValue={selectedProject.estimated_end_time ? new Date(selectedProject.estimated_end_time).toISOString().slice(0, 16) : ''}
+                />
+              </div>
+              
+              {selectedProject.status === "completed" && (
+                <div>
+                  <Label htmlFor="endTime">Data de Conclusão</Label>
+                  <Input 
+                    id="endTime" 
+                    name="endTime" 
+                    type="datetime-local"
+                    defaultValue={selectedProject.end_time ? new Date(selectedProject.end_time).toISOString().slice(0, 16) : ''}
+                  />
+                </div>
+              )}
 
-  <Button type="submit">Atualizar Projeto</Button>
-</form>
-
+              <Button type="submit">Atualizar Projeto</Button>
+            </form>
           )}
         </DialogContent>
       </Dialog>

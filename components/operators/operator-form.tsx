@@ -4,9 +4,11 @@ import React, { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { getTrucks, getProjects } from '@/lib/supabase';
-import { checkLoginExists, createOperator, updateOperator } from '@/lib/supabase-operators';
+import { checkLoginExists, createOperator, updateOperator, updateOperatorTrucks, updateOperatorProjects } from '@/lib/supabase-operators';
 import { Operator } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 interface OperatorFormProps {
   operator: Operator;
@@ -18,9 +20,16 @@ export const OperatorForm = ({ operator, isCreating, onClose }: OperatorFormProp
   const [form, setForm] = useState({
     ...operator,
     password: '',
-    truck_id: operator.truck_id ? String(operator.truck_id) : '',
     project_id: operator.project_id ? String(operator.project_id) : '',
   });
+
+  // Estado para armazenar os caminhões e projetos selecionados
+  const [selectedTrucks, setSelectedTrucks] = useState<number[]>(
+    operator.trucks?.map(truck => truck.id) || []
+  );
+  const [selectedProjects, setSelectedProjects] = useState<number[]>(
+    operator.projects?.map(project => project.id) || []
+  );
 
   const [trucks, setTrucks] = useState<{ id: number; name: string }[]>([]);
   const [projects, setProjects] = useState<{ id: number; name: string }[]>([]);
@@ -38,6 +47,22 @@ export const OperatorForm = ({ operator, isCreating, onClose }: OperatorFormProp
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const handleTruckToggle = (truckId: number) => {
+    setSelectedTrucks(prev => 
+      prev.includes(truckId)
+        ? prev.filter(id => id !== truckId)
+        : [...prev, truckId]
+    );
+  };
+
+  const handleProjectToggle = (projectId: number) => {
+    setSelectedProjects(prev => 
+      prev.includes(projectId)
+        ? prev.filter(id => id !== projectId)
+        : [...prev, projectId]
+    );
   };
 
   const handleSubmit = async () => {
@@ -60,8 +85,7 @@ export const OperatorForm = ({ operator, isCreating, onClose }: OperatorFormProp
       name: string;
       login: string;
       phone: string | null;
-      truck_id: number | null;
-      project_id: number | null;
+      project_id: number | null; // Mantido temporariamente
       password?: string;
     };
 
@@ -69,7 +93,6 @@ export const OperatorForm = ({ operator, isCreating, onClose }: OperatorFormProp
       name: form.name,
       login: form.login,
       phone: form.phone || null,
-      truck_id: form.truck_id ? Number(form.truck_id) : null,
       project_id: form.project_id ? Number(form.project_id) : null,
     };
 
@@ -78,24 +101,56 @@ export const OperatorForm = ({ operator, isCreating, onClose }: OperatorFormProp
     }
 
     console.log('Enviando para Supabase:', payload);
+    console.log('Caminhões selecionados:', selectedTrucks);
+    console.log('Projetos selecionados:', selectedProjects);
 
-    let error;
-    if (isCreating) {
-      // createOperator espera só o objeto
-      const result = await createOperator(payload);
-      error = result.error;
-    } else {
-      // updateOperator espera (id, objeto)
-      const result = await updateOperator(form.id, payload);
-      error = result.error;
-    }
+    try {
+      let error;
+      let operatorId: number;
+      
+      if (isCreating) {
+        // Criar operador
+        const result = await createOperator(payload);
+        error = result.error;
+        operatorId = result.data?.[0]?.id;
+      } else {
+        // Atualizar operador
+        const result = await updateOperator(form.id, payload);
+        error = result.error;
+        operatorId = form.id;
+      }
 
-    if (error) {
-      console.error('Erro Supabase:', error);
-      toast.error(`Erro ao salvar operador: ${error.message}`);
-    } else {
-      toast.success('Operador salvo com sucesso');
-      onClose();
+      if (error) {
+        console.error('Erro Supabase:', error);
+        const errorMessage = typeof error === 'object' && error !== null && 'message' in error 
+          ? error.message 
+          : JSON.stringify(error);
+        toast.error(`Erro ao salvar operador: ${errorMessage}`);
+      } else {
+        // Atualizar relações muitos-para-muitos
+        if (operatorId) {
+          // Atualizar caminhões vinculados
+          const trucksResult = await updateOperatorTrucks(operatorId, selectedTrucks);
+          if (trucksResult.error) {
+            console.error('Erro ao atualizar caminhões:', trucksResult.error);
+            toast.error('Erro ao vincular caminhões. Verifique o console para mais detalhes.');
+          }
+          
+          // Atualizar projetos vinculados
+          const projectsResult = await updateOperatorProjects(operatorId, selectedProjects);
+          if (projectsResult.error) {
+            console.error('Erro ao atualizar projetos:', projectsResult.error);
+            toast.error('Erro ao vincular projetos. Verifique o console para mais detalhes.');
+          }
+        }
+        
+        toast.success('Operador salvo com sucesso');
+        // Garantir que o modal seja fechado
+        onClose();
+      }
+    } catch (e) {
+      console.error('Erro ao salvar operador:', e);
+      toast.error('Erro ao salvar operador. Tente novamente.');
     }
   };
 
@@ -108,38 +163,36 @@ export const OperatorForm = ({ operator, isCreating, onClose }: OperatorFormProp
       )}
       <Input label="Telefone" name="phone" value={form.phone || ''} onChange={handleChange} />
 
-      <div>
-        <label className="block text-sm font-medium">Caminhão Vinculado</label>
-        <select
-          name="truck_id"
-          value={form.truck_id || ''}
-          onChange={handleChange}
-          className="border rounded w-full p-2"
-        >
-          <option value="">Sem caminhão vinculado</option>
+      <div className="space-y-2">
+        <Label className="text-base">Caminhões Vinculados</Label>
+        <div className="grid grid-cols-2 gap-2">
           {trucks.map((truck) => (
-            <option key={truck.id} value={truck.id}>
-              {truck.name}
-            </option>
+            <div key={truck.id} className="flex items-center space-x-2">
+              <Checkbox 
+                id={`truck-${truck.id}`} 
+                checked={selectedTrucks.includes(truck.id)}
+                onCheckedChange={() => handleTruckToggle(truck.id)}
+              />
+              <Label htmlFor={`truck-${truck.id}`}>{truck.name}</Label>
+            </div>
           ))}
-        </select>
+        </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium">Projeto Vinculado</label>
-        <select
-          name="project_id"
-          value={form.project_id || ''}
-          onChange={handleChange}
-          className="border rounded w-full p-2"
-        >
-          <option value="">Sem projeto vinculado</option>
+      <div className="space-y-2">
+        <Label className="text-base">Projetos Vinculados</Label>
+        <div className="grid grid-cols-2 gap-2">
           {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
+            <div key={project.id} className="flex items-center space-x-2">
+              <Checkbox 
+                id={`project-${project.id}`} 
+                checked={selectedProjects.includes(project.id)}
+                onCheckedChange={() => handleProjectToggle(project.id)}
+              />
+              <Label htmlFor={`project-${project.id}`}>{project.name}</Label>
+            </div>
           ))}
-        </select>
+        </div>
       </div>
 
       <div className="flex justify-end space-x-2">

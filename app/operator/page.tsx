@@ -2,25 +2,34 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Table } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { getOperators, deleteOperator } from '@/lib/supabase-operators';
 import { Operator } from '@/lib/supabase';
 import { OperatorForm } from '@/components/operators/operator-form';
 import { toast } from 'sonner';
+import { Truck, Folder } from 'lucide-react';
 
 export default function OperatorsPage() {
     const [operators, setOperators] = useState<Operator[]>([]);
     const [editingOperator, setEditingOperator] = useState<Operator | null>(null);
     const [isCreating, setIsCreating] = useState(false);
+    const [selectedTrucks, setSelectedTrucks] = useState<{ id: number; name: string }[] | null>(null);
+    const [selectedProjects, setSelectedProjects] = useState<{ id: number; name: string }[] | null>(null);
 
     useEffect(() => {
         loadOperators();
     }, []);
 
     const loadOperators = async () => {
-        const { data } = await getOperators();
-        setOperators(data || []);
-        console.log('Operators:', data);
+        try {
+            const { data, error } = await getOperators();
+            if (error) throw error;
+            setOperators(data || []);
+        } catch (e) {
+            console.error('Erro ao carregar operadores:', e);
+            toast.error('Erro ao carregar operadores');
+        }
     };
 
     const handleDelete = async (id: number) => {
@@ -42,15 +51,35 @@ export default function OperatorsPage() {
             name: '',
             login: '',
             phone: '',
-            truck_id: null,
             project_id: null,
             created_at: '',
+            trucks: [],
+            projects: []
         });
     };
 
     const openEditForm = (operator: Operator) => {
         setIsCreating(false);
         setEditingOperator(operator);
+        closeModals(); // Fechar outros modais abertos
+    };
+
+    const handleCloseForm = () => {
+        setEditingOperator(null);
+        loadOperators();
+    };
+
+    const openTrucksModal = (trucks: { id: number; name: string }[]) => {
+        setSelectedTrucks(trucks);
+    };
+
+    const openProjectsModal = (projects: { id: number; name: string }[]) => {
+        setSelectedProjects(projects);
+    };
+
+    const closeModals = () => {
+        setSelectedTrucks(null);
+        setSelectedProjects(null);
     };
 
     return (
@@ -60,52 +89,112 @@ export default function OperatorsPage() {
                 <Button onClick={openCreateForm}>+ Novo Operador</Button>
             </div>
 
-            <table className="w-full table-fixed border-collapse border border-gray-300">
-  <thead className="bg-gray-100">
-    <tr>
-      <th className="border border-gray-300 p-2 text-left">Nome</th>
-      <th className="border border-gray-300 p-2 text-left">Login</th>
-      <th className="border border-gray-300 p-2 text-left">Telefone</th>
-      <th className="border border-gray-300 p-2 text-left">Caminhão</th>
-      <th className="border border-gray-300 p-2 text-left">Projeto</th>
-      <th className="border border-gray-300 p-2 text-center">Ações</th>
-    </tr>
-  </thead>
-  <tbody>
-    {operators.map((op) => (
-      <tr key={op.id} className="hover:bg-gray-50">
-        <td className="border border-gray-300 p-2">{op.name}</td>
-        <td className="border border-gray-300 p-2">{op.login}</td>
-        <td className="border border-gray-300 p-2">{op.phone || '-'}</td>
-        <td className="border border-gray-300 p-2">{op.truck?.name || '-'}</td>
-        <td className="border border-gray-300 p-2">{op.project?.name || '-'}</td>
-        <td className="border border-gray-300 p-2 space-x-2 flex justify-center">
-          <Button size="sm" variant="outline" onClick={() => setEditingOperator(op)}>
-            Editar
-          </Button>
-          <Button size="sm" variant="destructive" onClick={() => handleDelete(op.id)}>
-            Excluir
-          </Button>
-        </td>
-      </tr>
-    ))}
-  </tbody>
-</table>
+            <Table>
+                <TableHeader>
+                    <TableRow className='bg-gray-100 border-b'>
+                        <TableHead>Nome</TableHead>
+                        <TableHead>Login</TableHead>
+                        <TableHead>Telefone</TableHead>
+                        <TableHead>Caminhões</TableHead>
+                        <TableHead>Projetos</TableHead>
+                        <TableHead className="text-center">Ações</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {operators.map((op) => (
+                        <TableRow key={op.id}>
+                            <TableCell className='border-r border-gray-200 border-l'>{op.name}</TableCell>
+                            <TableCell className='border-r border-gray-200'>{op.login}</TableCell>
+                            <TableCell className='border-r border-gray-200'>{op.phone || '-'}</TableCell>
+                            <TableCell className='border-r border-gray-200'>
+                                <Dialog open={selectedTrucks === op.trucks} onOpenChange={(open) => !open && closeModals()}>
+                                    <DialogTrigger asChild>
+                                        <Button variant="ghost" size="sm" onClick={() => openTrucksModal(op.trucks || [])}>
+                                            <Truck className="h-4 w-4" />
+                                        </Button>
+                                    </DialogTrigger>
+                                    <DialogContent className="sm:max-w-[425px]">
+                                        <DialogHeader>
+                                            <DialogTitle>Caminhões</DialogTitle>
+                                        </DialogHeader>
+                                        <ul className="space-y-2">
+                                            {(op.trucks && op.trucks.length > 0) ? (
+                                                op.trucks.map(truck => (
+                                                    <li key={truck.id}>{truck.name}</li>
+                                                ))
+                                            ) : (
+                                                <li>Nenhum caminhão associado</li>
+                                            )}
+                                        </ul>
+                                        <DialogFooter>
+                                            <Button onClick={() => openEditForm(op)}>
+                                                Editar
+                                            </Button>
+                                            <Button variant="outline" onClick={closeModals}>
+                                                Fechar
+                                            </Button>
+                                        </DialogFooter>
+                                    </DialogContent>
+                                </Dialog>
+                            </TableCell>
+                            <TableCell className='border-r border-gray-200 border-l'>
+                                <Dialog open={selectedProjects === op.projects} onOpenChange={(open) => !open && closeModals()}>
+                                    <DialogTrigger asChild>
+                                        <Button variant="ghost" size="sm" onClick={() => openProjectsModal(op.projects || [])}>
+                                            <Folder className="h-4 w-4" />
+                                        </Button>
+                                    </DialogTrigger>
+                                    <DialogContent className="sm:max-w-[425px]">
+                                        <DialogHeader>
+                                            <DialogTitle>Projetos</DialogTitle>
+                                        </DialogHeader>
+                                        <ul className="space-y-2">
+                                            {(op.projects && op.projects.length > 0) ? (
+                                                op.projects.map(project => (
+                                                    <li key={project.id}>{project.name}</li>
+                                                ))
+                                            ) : (
+                                                <li>Nenhum projeto associado</li>
+                                            )}
+                                        </ul>
+                                        <DialogFooter>
+                                            <Button onClick={() => openEditForm(op)}>
+                                                Editar
+                                            </Button>
+                                            <Button variant="outline" onClick={closeModals}>
+                                                Fechar
+                                            </Button>
+                                        </DialogFooter>
+                                    </DialogContent>
+                                </Dialog>
+                            </TableCell>
+                            <TableCell className="space-x-2 flex justify-center border-r border-gray-200 border-l">
+                                <Button size="sm" variant="outline" onClick={() => openEditForm(op)}>
+                                    Editar
+                                </Button>
+                                <Button size="sm" variant="destructive" onClick={() => handleDelete(op.id)}>
+                                    Excluir
+                                </Button>
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
 
-
+            {/* Modal de Edição/Criação */}
             {editingOperator !== null && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-                    <div className="bg-white p-6 rounded-lg shadow-lg">
+                <Dialog open={editingOperator !== null} onOpenChange={(open) => !open && handleCloseForm()}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>{isCreating ? 'Criar Operador' : 'Editar Operador'}</DialogTitle>
+                        </DialogHeader>
                         <OperatorForm
                             operator={editingOperator}
                             isCreating={isCreating}
-                            onClose={() => {
-                                setEditingOperator(null);
-                                loadOperators();
-                            }}
+                            onClose={handleCloseForm}
                         />
-                    </div>
-                </div>
+                    </DialogContent>
+                </Dialog>
             )}
         </div>
     );

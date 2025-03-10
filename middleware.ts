@@ -21,8 +21,8 @@ export async function middleware(request: NextRequest) {
   const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: {
       persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
       storage: {
         getItem: async (key) => {
           const cookies = request.cookies.get(key)
@@ -45,6 +45,7 @@ export async function middleware(request: NextRequest) {
     // If no session, redirect to login
     if (!session) {
       return NextResponse.redirect(new URL("/", request.url))
+      console.log("Não há sessão")
     }
 
     return NextResponse.next()

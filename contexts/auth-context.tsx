@@ -1,9 +1,9 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import React, { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import { useRouter } from "next/navigation"
-import { supabaseAuthClient, signIn, signUp, signOut, resetPassword, updatePassword } from "@/lib/supabase-auth"
+import { supabaseAuthClient, signIn, signUp, signOut, resetPassword, updatePassword, getCurrentUser } from "@/lib/supabase-auth"
 
 type AuthContextType = {
   user: User | null
@@ -25,41 +25,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
 
   useEffect(() => {
-    // Check for active session on mount
-    const checkSession = async () => {
+    // Verificar autenticação apenas uma vez na montagem
+    const checkAuth = async () => {
       try {
-        const {
-          data: { session },
-        } = await supabaseAuthClient.auth.getSession()
-        if (session?.user) {
-          setUser(session.user)
-        }
-      } catch (error) {
-        console.error("Error checking session:", error)
-        setError("Failed to retrieve authentication status")
+        const currentUser = await getCurrentUser()
+        setUser(currentUser)
       } finally {
         setLoading(false)
       }
     }
-
-    checkSession()
-
-    // Subscribe to auth changes
-    const {
-      data: { subscription },
-    } = supabaseAuthClient.auth.onAuthStateChange(async (event: any, session: any) => {
-      if (session?.user) {
-        setUser(session.user)
-      } else {
-        setUser(null)
+    
+    checkAuth()
+    
+    // Configurar listener para mudanças de autenticação
+    const { data: authListener } = supabaseAuthClient.auth.onAuthStateChange(
+      async (event, session) => {
+        // Só atualizar o estado quando realmente houver mudanças
+        if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+          const currentUser = session?.user || null
+          setUser(currentUser)
+        }
       }
-      setLoading(false)
-    })
-
+    )
+    
+    // Limpar o listener ao desmontar
     return () => {
-      subscription.unsubscribe()
+      authListener?.subscription?.unsubscribe()
     }
-  }, [])
+  }, []) // Executar apenas na montagem inicial
 
   useEffect(() => {
     if (!loading && user) {

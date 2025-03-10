@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { LayoutDashboard, FolderOpen, Users, TruckIcon, LogOut } from "lucide-react"
+import { LayoutDashboard, FolderOpen, Users, TruckIcon, LogOut, UsersIcon } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 
 export function MobileNav() {
@@ -57,7 +57,7 @@ export function MobileNav() {
         } hover:text-[#F2BE13]`}
         onClick={() => router.push("/clients")}
       >
-        <Users className="h-6 w-6" />
+        <UsersIcon className="h-6 w-6" />
         <span className="text-xs mt-1">Clientes</span>
       </Button>
       <Button

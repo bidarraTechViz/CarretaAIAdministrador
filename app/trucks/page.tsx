@@ -2,12 +2,16 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogTrigger } from "@/components/ui/dialog"
-import { getActiveTrucks, getInactiveTrucks } from "@/lib/db-service"
-import type { Truck } from "@/lib/supabase"
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { createTruck, getActiveTrucks, getInactiveTrucks, updateTruckById } from "@/lib/db-service"
+import type { Truck, Project } from "@/lib/supabase"
+import { getProjects } from "@/lib/supabase"
 import { checkTableColumns, type ColumnAvailability } from "@/lib/schema-utils"
 import { AlertTriangle } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const operators = [
   { value: "joao.silva", label: "João Silva" },
@@ -37,12 +41,14 @@ export default function Trucks() {
     plate_number: false,
     plateNumber: false,
   })
+  const [projects, setProjects] = useState<Project[]>([])
 
   useEffect(() => {
     // Verificar o esquema do banco de dados uma vez ao carregar o componente
     checkDatabaseSchema()
       .then(() => {
         loadTrucks()
+        loadProjects()
       })
       .catch((err) => {
         console.error("Erro ao verificar esquema:", err)
@@ -52,6 +58,7 @@ export default function Trucks() {
         setSchemaChecked(true)
         // Tentar carregar os caminhões mesmo assim
         loadTrucks()
+        loadProjects()
       })
   }, [])
 
@@ -175,7 +182,77 @@ export default function Trucks() {
     }
   }
 
-  // Resto do código permanece o mesmo...
+  // Função para carregar projetos
+  async function loadProjects() {
+    try {
+      const { data } = await getProjects()
+      if (data) {
+        // Converter para o tipo Project com as propriedades necessárias
+        const projectsData = data.map(p => ({
+          id: p.id,
+          name: p.name,
+          client: '',  // Valores padrão para as propriedades obrigatórias
+          address: '',
+          status: 'active' as 'active' | 'completed',
+          // Outras propriedades podem ser adicionadas conforme necessário
+        }));
+        setProjects(projectsData)
+      }
+    } catch (e) {
+      console.error("Erro ao carregar projetos:", e)
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os projetos. Tente novamente mais tarde.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  async function handleAddTruck(newTruck: Partial<Truck>) {
+    try {
+      setSubmitting(true)
+      const { error } = await createTruck(newTruck)
+      if (error) throw error
+      toast({
+        title: "Sucesso",
+        description: "Caminhão adicionado com sucesso!",
+      })
+      loadTrucks() // Recarregar a lista de caminhões
+      setIsAddDialogOpen(false) // Fechar o diálogo
+    } catch (e) {
+      console.error("Erro ao adicionar caminhão:", e)
+      toast({
+        title: "Erro",
+        description: "Não foi possível adicionar o caminhão. Tente novamente.",
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleEditTruck(id: number, updatedTruck: Partial<Truck>) {
+    try {
+      setSubmitting(true)
+      await updateTruckById(id, updatedTruck)
+      toast({
+        title: "Sucesso",
+        description: "Caminhão atualizado com sucesso!",
+      })
+      loadTrucks() // Recarregar a lista de caminhões
+      setIsEditDialogOpen(false) // Fechar o diálogo
+      setSelectedTruck(null) // Limpar o caminhão selecionado
+    } catch (e) {
+      console.error("Erro ao atualizar caminhão:", e)
+      toast({
+        title: "Erro",
+        description: "Não foi possível atualizar o caminhão. Tente novamente.",
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -185,7 +262,85 @@ export default function Trucks() {
           <DialogTrigger asChild>
             <Button className="bg-black text-[#F2BE13] hover:bg-black/80">Adicionar Caminhão</Button>
           </DialogTrigger>
-          {/* Resto do diálogo permanece o mesmo... */}
+          <DialogContent className="bg-black text-[#F2BE13]">
+            <DialogHeader>
+              <DialogTitle>Adicionar Novo Caminhão</DialogTitle>
+            </DialogHeader>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                const formData = new FormData(e.currentTarget)
+                const projectId = formData.get('projectId') ? String(formData.get('projectId')) : null;
+                
+                // Encontrar o projeto selecionado para obter o nome
+                let currentProject = null;
+                if (projectId && projectId !== "none") {
+                  const selectedProject = projects.find(p => p.id.toString() === projectId);
+                  currentProject = selectedProject ? selectedProject.name : null;
+                }
+                
+                const newTruck = {
+                  name: String(formData.get('truckName') || ''),
+                  plate_number: String(formData.get('plateNumber') || ''),
+                  load_volume: parseFloat(String(formData.get('loadVolume') || '0')),
+                  project_id: projectId && projectId !== "none" ? parseInt(projectId, 10) : null,
+                  current_project: currentProject,
+                  truck_entry_status: 0, // Valor padrão para caminhões novos
+                }
+                await handleAddTruck(newTruck)
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <Label htmlFor="truckName">Nome do Caminhão</Label>
+                <Input
+                  id="truckName"
+                  name="truckName"
+                  required
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+              <div>
+                <Label htmlFor="plateNumber">Placa</Label>
+                <Input
+                  id="plateNumber"
+                  name="plateNumber"
+                  required
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+              <div>
+                <Label htmlFor="loadVolume">Volume de Carga (m³)</Label>
+                <Input
+                  id="loadVolume"
+                  name="loadVolume"
+                  type="number"
+                  step="0.01"
+                  required
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+              <div>
+                <Label htmlFor="projectId">Projeto</Label>
+                <Select name="projectId">
+                  <SelectTrigger className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]">
+                    <SelectValue placeholder="Selecione um projeto" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-black text-[#F2BE13]">
+                    <SelectItem value="none">Nenhum projeto</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id.toString()}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" className="bg-[#F2BE13] text-black hover:bg-[#F2BE13]/80">
+                Criar Caminhão
+              </Button>
+            </form>
+          </DialogContent>
         </Dialog>
       </div>
 
@@ -198,15 +353,17 @@ export default function Trucks() {
           </div>
         </div>
       )}
+
 <h2 className="text-2xl font-semibold mt-6">Caminhões Ativos</h2>
 <div className="overflow-x-auto">
   <table className="w-full table-fixed border-collapse border border-gray-300">
-    <thead className="">
+          <thead className="bg-gray-100">
       <tr>
         <th className="border border-gray-300 p-2 text-left">Nome</th>
         <th className="border border-gray-300 p-2 text-left">Placa</th>
         <th className="border border-gray-300 p-2 text-left">Volume Transportado</th>
         <th className="border border-gray-300 p-2 text-left">Projeto Atual</th>
+              <th className="border border-gray-300 p-2 text-center">Ações</th>
       </tr>
     </thead>
     <tbody>
@@ -216,6 +373,47 @@ export default function Trucks() {
           <td className="border border-gray-300 p-2">{truck.plate_number}</td>
           <td className="border border-gray-300 p-2">{truck.load_volume} m³</td>
           <td className="border border-gray-300 p-2">{truck.current_project || '-'}</td>
+                <td className="border border-gray-300 p-2 space-x-2 flex justify-center">
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="outline">Ver Detalhes</Button>
+                    </DialogTrigger>
+                    <DialogContent className="bg-black text-[#F2BE13]">
+                      <DialogHeader>
+                        <DialogTitle>{truck.name}</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-2">
+                        <p><strong>Nome:</strong> {truck.name}</p>
+                        <p><strong>Placa:</strong> {truck.plate_number}</p>
+                        <p><strong>Volume Transportado:</strong> {truck.load_volume} m³</p>
+                        <p><strong>Projeto Atual:</strong> {truck.current_project || 'Nenhum'}</p>
+                        <p><strong>Status:</strong> Ativo</p>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                  
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedTruck(truck)
+                      setIsEditDialogOpen(true)
+                    }}
+                  >
+                    Editar
+                  </Button>
+                  
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      setSelectedTruck(truck)
+                      setIsDeleteDialogOpen(true)
+                    }}
+                  >
+                    Excluir
+                  </Button>
+                </td>
         </tr>
       ))}
     </tbody>
@@ -225,12 +423,13 @@ export default function Trucks() {
 <h2 className="text-2xl font-semibold mt-6">Caminhões Inativos</h2>
 <div className="overflow-x-auto">
   <table className="w-full table-fixed border-collapse border border-gray-300">
-    <thead className="bg-black-100">
+          <thead className="bg-gray-100">
       <tr>
         <th className="border border-gray-300 p-2 text-left">Nome</th>
         <th className="border border-gray-300 p-2 text-left">Placa</th>
         <th className="border border-gray-300 p-2 text-left">Volume Transportado</th>
         <th className="border border-gray-300 p-2 text-left">Projeto Atual</th>
+              <th className="border border-gray-300 p-2 text-center">Ações</th>
       </tr>
     </thead>
     <tbody>
@@ -240,6 +439,47 @@ export default function Trucks() {
           <td className="border border-gray-300 p-2">{truck.plate_number}</td>
           <td className="border border-gray-300 p-2">{truck.load_volume} m³</td>
           <td className="border border-gray-300 p-2">{truck.current_project || '-'}</td>
+                <td className="border border-gray-300 p-2 space-x-2 flex justify-center">
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="outline">Ver Detalhes</Button>
+                    </DialogTrigger>
+                    <DialogContent className="bg-black text-[#F2BE13]">
+                      <DialogHeader>
+                        <DialogTitle>{truck.name}</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-2">
+                        <p><strong>Nome:</strong> {truck.name}</p>
+                        <p><strong>Placa:</strong> {truck.plate_number}</p>
+                        <p><strong>Volume Transportado:</strong> {truck.load_volume} m³</p>
+                        <p><strong>Projeto Atual:</strong> {truck.current_project || 'Nenhum'}</p>
+                        <p><strong>Status:</strong> Inativo</p>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                  
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedTruck(truck)
+                      setIsEditDialogOpen(true)
+                    }}
+                  >
+                    Editar
+                  </Button>
+                  
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      setSelectedTruck(truck)
+                      setIsDeleteDialogOpen(true)
+                    }}
+                  >
+                    Excluir
+                  </Button>
+                </td>
         </tr>
       ))}
     </tbody>
@@ -253,7 +493,106 @@ export default function Trucks() {
         </div>
       )}
 
-      {/* Resto do componente permanece o mesmo... */}
+      {/* Diálogo de edição de caminhão */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="bg-black text-[#F2BE13]">
+          <DialogHeader>
+            <DialogTitle>Editar Caminhão</DialogTitle>
+          </DialogHeader>
+          {selectedTruck && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                const formData = new FormData(e.currentTarget)
+                const projectId = formData.get('projectId') ? String(formData.get('projectId')) : null;
+                
+                // Encontrar o projeto selecionado para obter o nome
+                let currentProject = null;
+                if (projectId && projectId !== "none") {
+                  const selectedProject = projects.find(p => p.id.toString() === projectId);
+                  currentProject = selectedProject ? selectedProject.name : null;
+                }
+                
+                const updatedTruck = {
+                  name: String(formData.get('truckName') || ''),
+                  plate_number: String(formData.get('plateNumber') || ''),
+                  load_volume: parseFloat(String(formData.get('loadVolume') || '0')),
+                  project_id: projectId && projectId !== "none" ? parseInt(projectId, 10) : null,
+                  current_project: currentProject,
+                }
+                
+                await handleEditTruck(selectedTruck.id, updatedTruck)
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <Label htmlFor="truckName">Nome do Caminhão</Label>
+                <Input
+                  id="truckName"
+                  name="truckName"
+                  defaultValue={selectedTruck.name}
+                  required
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+              <div>
+                <Label htmlFor="plateNumber">Placa</Label>
+                <Input
+                  id="plateNumber"
+                  name="plateNumber"
+                  defaultValue={selectedTruck.plate_number}
+                  required
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+              <div>
+                <Label htmlFor="loadVolume">Volume de Carga (m³)</Label>
+                <Input
+                  id="loadVolume"
+                  name="loadVolume"
+                  type="number"
+                  step="0.01"
+                  defaultValue={selectedTruck.load_volume}
+                  required
+                  className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]"
+                />
+              </div>
+              <div>
+                <Label htmlFor="projectId">Projeto</Label>
+                <Select 
+                  name="projectId" 
+                  defaultValue={selectedTruck.project_id ? selectedTruck.project_id.toString() : "none"}
+                >
+                  <SelectTrigger className="bg-black/40 border-[#F2BE13]/20 text-[#F2BE13]">
+                    <SelectValue placeholder="Selecione um projeto" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-black text-[#F2BE13]">
+                    <SelectItem value="none">Nenhum projeto</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id.toString()}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setIsEditDialogOpen(false)}
+                  className="border-[#F2BE13]/20 text-[#F2BE13] hover:bg-black/40"
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" className="bg-[#F2BE13] text-black hover:bg-[#F2BE13]/80">
+                  Salvar Alterações
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -4,16 +4,16 @@ import { useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { TruckIcon, LayoutDashboard, Clock, Users, FolderOpen, Menu, LogOut } from "lucide-react"
+import { TruckIcon, LayoutDashboard, Clock, Users, FolderOpen, Menu, LogOut, UsersIcon } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Painel", href: "/dashboard" },
-  { icon: Clock, label: "Tempo Real", href: "/real-time" },
+  /*{ icon: Clock, label: "Tempo Real", href: "/real-time" },*/
   { icon: Users, label: "Clientes", href: "/clients" },
   { icon: FolderOpen, label: "Projetos", href: "/projects" },
   { icon: TruckIcon, label: "Caminhões", href: "/trucks" },
-  { icon: 'Users', label: 'Operadores', href: '/operator'}
+  { icon: UsersIcon, label: 'Operadores', href: '/operator'}
 ]
 
 interface SidebarProps {

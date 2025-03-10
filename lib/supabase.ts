@@ -34,6 +34,9 @@ export type Project = {
   transportedVolume?: number
   status: "active" | "completed"
   created_at?: string
+  start_time?: string // Data de início do projeto
+  estimated_end_time?: string // Prazo estimado para conclusão
+  end_time?: string // Data efetiva de conclusão
   [key: string]: any // Permite propriedades adicionais para flexibilidade
 }
 
@@ -66,15 +69,16 @@ export interface Operator {
   login: string;
   password?: string;
   phone?: string;
-  truck_id?: number | null;
-  project_id?: number | null;
+  project_id?: number | null; // Será removido posteriormente quando implementarmos a relação muitos-para-muitos
   created_at: string;
-  truck?: {
-      name: string;
-  };
-  project?: {
-      name: string;
-  };
+  trucks?: { // Agora é um array de caminhões
+    id: number;
+    name: string;
+  }[];
+  projects?: { // Agora é um array de projetos
+    id: number;
+    name: string;
+  }[];
 }
 
 
