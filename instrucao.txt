@@ -1,0 +1,109 @@
+# DOCUMENTAÇÃO DO SISTEMA DE GERENCIAMENTO DE VOLUME DE CAMINHÕES
+
+## ORDEM DE CADASTRO RECOMENDADA
+
+Para garantir o funcionamento adequado do sistema, é necessário seguir uma ordem específica de cadastro das entidades. Esta ordem é baseada nas dependências entre as diferentes entidades do sistema.
+
+### 1. CADASTRO DE CLIENTES
+
+O primeiro passo é cadastrar os clientes, pois eles são a base para a criação de projetos.
+
+**Caminho:** `/clients`
+
+**Informações necessárias:**
+- Nome do cliente
+- Nome de usuário do cliente
+
+**Observações:**
+- Os clientes são entidades independentes e não possuem dependências com outras entidades
+- É necessário cadastrar pelo menos um cliente antes de criar projetos
+
+### 2. CADASTRO DE PROJETOS
+
+Após cadastrar os clientes, o próximo passo é cadastrar os projetos, que estão vinculados aos clientes.
+
+**Caminho:** `/projects`
+
+**Informações necessárias:**
+- Nome do projeto
+- Cliente (selecionado a partir dos clientes cadastrados)
+- Data de início
+- Localização
+- Descrição (opcional)
+
+**Observações:**
+- Um projeto deve estar obrigatoriamente vinculado a um cliente
+- Os projetos podem ser marcados como ativos ou concluídos
+- É necessário cadastrar pelo menos um projeto antes de cadastrar caminhões com projetos associados
+
+### 3. CADASTRO DE CAMINHÕES
+
+Depois de cadastrar projetos, é possível cadastrar os caminhões, que podem ser associados a projetos.
+
+**Caminho:** `/trucks`
+
+**Informações necessárias:**
+- Nome/Identificação do caminhão
+- Número da placa
+- Capacidade de carga
+- Projeto atual (opcional, selecionado a partir dos projetos cadastrados)
+- Status (ativo/inativo)
+
+**Observações:**
+- Os caminhões podem ser cadastrados sem um projeto associado inicialmente
+- É possível alterar o projeto associado a um caminhão posteriormente
+- É necessário cadastrar caminhões antes de associá-los a operadores
+
+### 4. CADASTRO DE OPERADORES
+
+Por último, cadastre os operadores, que podem ser associados a caminhões e projetos.
+
+**Caminho:** Acessível através da interface de administração
+
+**Informações necessárias:**
+- Nome do operador
+- Login
+- Senha
+- Telefone (opcional)
+- Caminhões associados (selecionados a partir dos caminhões cadastrados)
+- Projetos associados (selecionados a partir dos projetos cadastrados)
+
+**Observações:**
+- Um operador pode ser associado a múltiplos caminhões e projetos
+- As associações podem ser modificadas posteriormente
+- O login do operador deve ser único no sistema
+
+## FLUXO DE AUTENTICAÇÃO
+
+1. **Registro de Administrador:**
+   - O primeiro usuário deve ser registrado como administrador
+   - Use o formulário de registro na página inicial
+
+2. **Login:**
+   - Após o registro, faça login com as credenciais criadas
+   - Administradores têm acesso a todas as funcionalidades do sistema
+   - Operadores têm acesso limitado às funcionalidades relacionadas aos caminhões e projetos associados a eles
+
+3. **Recuperação de Senha:**
+   - Caso necessário, utilize a funcionalidade de recuperação de senha na página inicial
+
+## CONSIDERAÇÕES IMPORTANTES
+
+1. **Dependências entre Entidades:**
+   - Clientes → Projetos → Caminhões → Operadores
+   - Respeitar esta hierarquia garante a integridade dos dados
+
+2. **Banco de Dados:**
+   - O sistema utiliza Supabase como banco de dados
+   - As tabelas e relações são criadas automaticamente
+   - Evite modificar diretamente a estrutura do banco de dados
+
+3. **Atualizações e Exclusões:**
+   - Ao excluir uma entidade de nível superior (ex: cliente), verifique se não há dependências ativas
+   - Recomenda-se inativar entidades em vez de excluí-las quando possível
+
+4. **Monitoramento em Tempo Real:**
+   - O sistema possui funcionalidades de monitoramento em tempo real
+   - Para que funcionem corretamente, todas as entidades devem estar devidamente cadastradas e relacionadas
+
+Seguindo esta ordem de cadastro e as recomendações acima, o sistema funcionará adequadamente e permitirá o gerenciamento eficiente do volume de caminhões em seus projetos. 

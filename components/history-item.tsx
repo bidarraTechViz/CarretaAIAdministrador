@@ -19,12 +19,18 @@ export function HistoryItem({ date, time, operador, photoUrl, material }: Histor
   // Verificar se a URL é base64
   const isBase64 = photoUrl && photoUrl.startsWith('data:');
   
+  // Corrigir URL da imagem se for base64 duplicado
+  let fixedPhotoUrl = photoUrl;
+  if (isBase64 && photoUrl.includes('data:image/jpeg;base64,data:image/jpeg;base64,')) {
+    fixedPhotoUrl = photoUrl.replace('data:image/jpeg;base64,data:image/jpeg;base64,', 'data:image/jpeg;base64,');
+  }
+  
   // URL da imagem (base64 ou URL normal)
-  const imageUrl = !imageError && photoUrl ? photoUrl : "/placeholder.svg?height=100&width=150";
+  const imageUrl = !imageError && fixedPhotoUrl ? fixedPhotoUrl : "/placeholder.svg?height=100&width=150";
   
   // Função para lidar com erros de carregamento de imagem
   const handleImageError = () => {
-    console.error("Erro ao carregar imagem:", photoUrl?.substring(0, 50) + "...");
+    console.error("Erro ao carregar imagem:", fixedPhotoUrl?.substring(0, 50) + "...");
     setImageError(true);
   };
   
